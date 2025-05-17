@@ -706,4 +706,4 @@ def generate_nrmeen_response(user_input):
         "sleep": ["im so tired all the time", "i havent slept in days", "who needs sleep anyway"],
         "food": ["im starving rn", "i could eat a whole pizza", "lets get food after this"],
         "weekend": ["cant wait for the weekend", "this weekend is gonna be lit", "weekend plans?"],
-        "party
+        "party"
