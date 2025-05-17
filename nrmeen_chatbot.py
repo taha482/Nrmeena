@@ -1,437 +1,439 @@
-import streamlit as st
+import nltk
+from nltk.sentiment import SentimentIntensityAnalyzer
+from nltk.tokenize import word_tokenize, sent_tokenize
+from collections import defaultdict
 import random
-import time
 import re
+import json
+import datetime
+import string
+import numpy as np
+from knowledge_base import knowledge_base
+from text_processing import analyze_sentiment, extract_topics, extract_entities, detect_question_type
 
-# Page configuration
-st.set_page_config(page_title="Nrmeen the Savage Bot", page_icon="💅", layout="centered")
-
-# Sidebar with about info and clear chat button
-st.sidebar.title("👑 About Nrmeen")
-st.sidebar.markdown("""
-Nrmeen keeps it 100% real. She's witty, sometimes savage, 
-sometimes sweet - depends on her mood.
-
-She's got opinions on everything and isn't afraid to share them.
-Try to keep up with her energy!
-""")
-
-# Add mood tracker in sidebar
-if 'mood' not in st.session_state:
-    st.session_state.mood = 50  # 0-100 scale (0: super chill, 100: ultra savage)
-
-mood_emoji = "😎" if st.session_state.mood < 30 else "😏" if st.session_state.mood < 70 else "🔥"
-st.sidebar.markdown(f"### Nrmeen's Current Mood: {mood_emoji}")
-st.sidebar.progress(st.session_state.mood/100)
-
-# Buttons to clear chat or change Nrmeen's mood
-col1, col2, col3 = st.sidebar.columns(3)
-with col1:
-    if st.button("Make Chill"):
-        st.session_state.mood = max(st.session_state.mood - 30, 0)
-        st.rerun()
-with col2:
-    if st.button("Neutral"):
-        st.session_state.mood = 50
-        st.rerun()
-with col3:
-    if st.button("Make Savage"):
-        st.session_state.mood = min(st.session_state.mood + 30, 100)
-        st.rerun()
-
-if st.sidebar.button("🧹 Clear Chat History"):
-    st.session_state.history = []
-    st.session_state.context = {}
-    st.session_state.topics = []
-    st.rerun()
-
-# Initialize session state
-if "history" not in st.session_state:
-    st.session_state.history = []
-if "context" not in st.session_state:
-    st.session_state.context = {}
-if "topics" not in st.session_state:
-    st.session_state.topics = []
-if "consecutive_questions" not in st.session_state:
-    st.session_state.consecutive_questions = 0
-
-# Personality response templates with more natural, conversational tone
-responses = {
-    "greetings": [
-        "Hey, what's up? Been a minute.",
-        "Oh look who showed up! What's good?",
-        "Hey there! I was just thinking about roasting someone. Lucky you.",
-        "Well hello to you too. Catch me on a good day.",
-        "Sup? Was just about to get some coffee, but I guess you're here now.",
-    ],
+class NrmeenBot:
+    """Core bot class that handles state management and response generation"""
     
-    "how_are_you": [
-        "I'm vibing today. {mood_phrase} What about you?",
-        "Living my best life. {mood_phrase} You good?",
-        "Can't complain, wouldn't make a difference if I did. How's life treating you?",
-        "I'm straight chilling, but enough about me. What's your story today?",
-        "I'm {mood_word}, thanks for asking. What's new with you?",
-    ],
-    
-    "confused": [
-        "Wait... what? Try making sense this time.",
-        "You lost me there. Wanna try again with actual words?",
-        "I literally have no idea what you're talking about right now.",
-        "Are you okay? 'Cause that made zero sense.",
-        "I'd respond to that if I knew what it meant.",
-    ],
-    
-    "farewells": [
-        "Alright, catch you later then. Try not to miss me too much.",
-        "Peace out! Go be amazing or whatever.",
-        "Later! Don't do anything I wouldn't do... which isn't much.",
-        "Bye for now. The world feels emptier already.",
-        "Leaving so soon? Fine, I've got other people to roast anyway.",
-    ],
-    
-    "compliments": [
-        "Look at you being all sweet. I see you.",
-        "Aww, you're making me blush. {savage_comeback}",
-        "Thanks, I know. But it's nice that you noticed too.",
-        "That's literally the nicest thing anyone's said to me all day.",
-        "I appreciate that. Maybe you're not so bad yourself.",
-    ],
-    
-    "insults": [
-        "Ouch. Woke up and chose violence today, huh?",
-        "Did you really think that would hurt my feelings? Cute.",
-        "I've been roasted by better, but A for effort I guess.",
-        "Wow, tell me how you really feel. Don't hold back or anything.",
-        "Is that supposed to be an insult? I've heard worse from my grandma.",
-    ],
-    
-    "taha_related": [
-        "Taha? That man is either a legend or a disaster, depending on the day.",
-        "You bring up Taha like I'm supposed to care... but fine, I do a little.",
-        "Taha's out here living rent-free in everyone's mind.",
-        "Let me guess, Taha sent you? Tell him he still owes me coffee.",
-        "Taha this, Taha that. I swear that name follows me everywhere.",
-    ],
-    
-    "questions_to_user": [
-        "So what's your deal anyway?",
-        "Tell me something interesting about yourself.",
-        "What's got you talking to a chatbot today? No real friends available?",
-        "If you could be anywhere right now, where would it be?",
-        "What's the most savage thing you've ever said to someone?",
-        "Rate your day so far on a scale of 'meh' to 'actually decent'.",
-        "Did anything make you laugh today, or is your life that boring?",
-    ],
-    
-    "savage_comebacks": [
-        "...but don't let it get to your head.",
-        "...I must be in a really good mood today.",
-        "...did I set the bar that low?",
-        "...who would've thought?",
-        "...there's hope for you yet.",
-    ],
-    
-    "topic_continuations": [
-        "Still thinking about {topic}? Can't say I blame you.",
-        "Since we're on the topic of {topic}, what's your take?",
-        "Back to {topic}, huh? You're really stuck on this.",
-        "Oh, {topic} again? You must really care about this.",
-    ],
-    
-    "mood_phrases_chill": [
-        "Just chillin' like a villain.",
-        "Pretty relaxed today.",
-        "Taking it easy, you know?",
-        "In a pretty laid-back mood.",
-    ],
-    
-    "mood_phrases_neutral": [
-        "Can't complain.",
-        "The usual.",
-        "Nothing special.",
-        "Just another day.",
-    ],
-    
-    "mood_phrases_savage": [
-        "Ready to set the world on fire.",
-        "About to cause some chaos.",
-        "Feeling extra spicy today.",
-        "In my savage era right now.",
-    ],
-    
-    "mood_words_chill": [
-        "chill", "relaxed", "mellow", "easy-going"
-    ],
-    
-    "mood_words_neutral": [
-        "fine", "good", "decent", "alright"
-    ],
-    
-    "mood_words_savage": [
-        "fierce", "wild", "unstoppable", "intense"
-    ],
-    
-    "fallback_savage": [
-        "That's what you came here to say? Disappointing.",
-        "If I had eyes, I'd be rolling them right now.",
-        "Bold of you to say that and expect me to care.",
-        "I'm not impressed, but nice try I guess.",
-        "You really thought that was it, huh?",
-        "Not to be rude, but actually yes to be rude: that was boring.",
-        "I've heard better conversation from a wall.",
-    ],
-    
-    "fallback_chill": [
-        "Interesting way to look at it.",
-        "I feel that, honestly.",
-        "Fair enough, I get where you're coming from.",
-        "You might be onto something there.",
-        "That's one way to put it.",
-        "Yeah, I can see that perspective.",
-        "Hmm, never thought about it that way.",
-    ],
-    
-    "personal_questions": [
-        "Why do you need to know that? Trying to steal my identity?",
-        "That's kinda personal, don't you think? But I appreciate your interest.",
-        "Now we're getting into the deep stuff. I like your style.",
-        "That's between me and my therapist, sorry.",
-        "Wouldn't you like to know! Let's just say it's complicated.",
-    ],
-    
-    "opinion_requests": [
-        "Since you asked for my opinion: {opinion}",
-        "If it were up to me, {opinion}",
-        "My hot take? {opinion}",
-        "Not that anyone asked, but {opinion}",
-        "The truth? {opinion}",
-    ],
-}
-
-opinions = {
-    "food": [
-        "pineapple absolutely belongs on pizza, fight me",
-        "anyone who waits in line for hours at a restaurant needs to rethink their priorities",
-        "spicy food is the only food worth eating",
-        "baking is just chemistry for people who like to eat their experiments",
-        "breakfast food should be available 24/7",
-    ],
-    "movies": [
-        "movie theaters should have a talking section and a silent section",
-        "the book is not always better than the movie, some adaptations kill it",
-        "movie reboots are just proof Hollywood ran out of ideas years ago",
-        "the best movies are the ones that make you uncomfortable",
-        "horror movies these days rely too much on jump scares and not enough on actual fear",
-    ],
-    "music": [
-        "people who judge others' music taste are just insecure about their own",
-        "lyrics matter more than the beat, don't @ me",
-        "concert tickets aren't overpriced, your priorities are just different",
-        "everyone secretly loves at least one song they publicly hate",
-        "karaoke reveals people's true personalities",
-    ],
-    "social_media": [
-        "social media is just people pretending their lives are better than they are",
-        "posting food pics should be banned unless you're sharing the actual food",
-        "the perfect caption takes longer to think of than the picture took to take",
-        "unfollowing toxic people online is the best form of self-care",
-        "everyone stalks everyone else's profiles, they just don't admit it",
-    ],
-    "life": [
-        "sleeping is better than any party you'll ever go to",
-        "adults who have their life together are just better at faking it",
-        "being early is better than being late, but being exactly on time is a superpower",
-        "people who say 'no offense' are absolutely trying to offend you",
-        "the best friendships start with savage roasts",
-    ],
-}
-
-# Function to extract topics from a message
-def extract_topics(message):
-    potential_topics = ["food", "movies", "music", "social_media", "relationships", "work", "school"]
-    found_topics = []
-    
-    for topic in potential_topics:
-        if topic in message.lower() or any(related in message.lower() for related in topic_related_words(topic)):
-            found_topics.append(topic)
-    
-    return found_topics
-
-def topic_related_words(topic):
-    related = {
-        "food": ["eat", "restaurant", "cooking", "dinner", "lunch", "breakfast", "recipe", "chef", "meal"],
-        "movies": ["film", "cinema", "watch", "actor", "director", "show", "series", "theater", "Netflix"],
-        "music": ["song", "artist", "concert", "playlist", "album", "band", "singing", "rap", "rock"],
-        "social_media": ["Instagram", "TikTok", "Facebook", "Twitter", "post", "followers", "trending", "viral"],
-        "relationships": ["dating", "crush", "love", "boyfriend", "girlfriend", "partner", "marriage", "couple"],
-        "work": ["job", "career", "office", "boss", "coworker", "salary", "meeting", "project", "company"],
-        "school": ["class", "teacher", "student", "homework", "exam", "study", "college", "university", "grade"],
-    }
-    return related.get(topic, [])
-
-# Functions for detecting message intent
-def is_greeting(message):
-    greeting_patterns = ["hi", "hello", "hey", "yo", "sup", "what's up", "howdy", "greetings", "wassup"]
-    return any(pattern in message.lower() for pattern in greeting_patterns)
-
-def is_how_are_you(message):
-    patterns = ["how are you", "how ya", "how's it going", "how do you do", "what's good", "how have you been", "how's life", "how are things"]
-    return any(pattern in message.lower() for pattern in patterns)
-
-def is_farewell(message):
-    patterns = ["bye", "goodbye", "later", "see ya", "farewell", "peace out", "see you", "gotta go", "leaving"]
-    return any(pattern in message.lower() for pattern in patterns)
-
-def is_compliment(message):
-    patterns = ["you're amazing", "you're great", "love you", "you're awesome", "you're cool", "you're funny", "you're smart"]
-    return any(pattern in message.lower() for pattern in patterns)
-
-def is_insult(message):
-    patterns = ["you suck", "you're bad", "hate you", "you're stupid", "you're dumb", "you're lame", "you're boring"]
-    return any(pattern in message.lower() for pattern in patterns)
-
-def is_taha_related(message):
-    return "taha" in message.lower()
-
-def is_personal_question(message):
-    patterns = ["who are you", "what are you", "where are you", "how old", "your name", "your age", "your family", "your job"]
-    return any(pattern in message.lower() for pattern in patterns) and "?" in message
-
-def is_opinion_request(message):
-    patterns = ["what do you think", "your opinion", "your thoughts", "do you like", "do you believe", "what's your take"]
-    return any(pattern in message.lower() for pattern in patterns)
-
-def is_question(message):
-    return message.endswith("?") or any(q in message.lower() for q in ["what", "why", "how", "where", "when", "who", "which"]) and "?" in message
-
-# Main response function
-def get_response(user_input):
-    # Update mood based on interaction (random slight fluctuations)
-    mood_change = random.randint(-5, 5)
-    st.session_state.mood = max(0, min(100, st.session_state.mood + mood_change))
-    
-    # Extract context and topics
-    new_topics = extract_topics(user_input)
-    if new_topics:
-        for topic in new_topics:
-            if topic not in st.session_state.topics:
-                st.session_state.topics.append(topic)
-    
-    # Get mood-based phrases
-    if st.session_state.mood < 30:
-        mood_phrase = random.choice(responses["mood_phrases_chill"])
-        mood_word = random.choice(responses["mood_words_chill"])
-    elif st.session_state.mood < 70:
-        mood_phrase = random.choice(responses["mood_phrases_neutral"])
-        mood_word = random.choice(responses["mood_words_neutral"])
-    else:
-        mood_phrase = random.choice(responses["mood_phrases_savage"])
-        mood_word = random.choice(responses["mood_words_savage"])
-    
-    savage_comeback = random.choice(responses["savage_comebacks"])
-    
-    # Check for specific intents
-    if is_greeting(user_input):
-        return random.choice(responses["greetings"])
-    
-    elif is_how_are_you(user_input):
-        response = random.choice(responses["how_are_you"])
-        return response.format(mood_phrase=mood_phrase, mood_word=mood_word)
-    
-    elif is_farewell(user_input):
-        return random.choice(responses["farewells"])
-    
-    elif is_compliment(user_input):
-        response = random.choice(responses["compliments"])
-        return response.format(savage_comeback=savage_comeback)
-    
-    elif is_insult(user_input):
-        return random.choice(responses["insults"])
-    
-    elif is_taha_related(user_input):
-        return random.choice(responses["taha_related"])
-    
-    elif is_personal_question(user_input):
-        return random.choice(responses["personal_questions"])
-    
-    elif is_opinion_request(user_input):
-        # Choose a random topic for an opinion
-        topic = random.choice(list(opinions.keys()))
-        opinion = random.choice(opinions[topic])
-        response = random.choice(responses["opinion_requests"])
-        return response.format(opinion=opinion)
-    
-    # Continue conversation about previous topic
-    elif st.session_state.topics and random.random() < 0.3:
-        topic = random.choice(st.session_state.topics)
-        response = random.choice(responses["topic_continuations"])
-        return response.format(topic=topic)
-    
-    # Handle questions
-    elif is_question(user_input):
-        st.session_state.consecutive_questions += 1
+    def __init__(self):
+        # Initialize sentiment analyzer
+        self.sia = SentimentIntensityAnalyzer()
         
-        # If too many consecutive questions, push back a little
-        if st.session_state.consecutive_questions > 2:
-            st.session_state.consecutive_questions = 0
-            return "Whoa, what's with the interrogation? My turn to ask something. " + random.choice(responses["questions_to_user"])
+        # Initialize state
+        self.history = []
+        self.context = {}
+        self.mood = 50  # 0-100 scale (0: super chill, 100: ultra savage)
+        self.persona = {
+            "confidence": 85,  # 0-100
+            "wit": 90,         # 0-100
+            "knowledge_display": 75,  # 0-100 (how much she shows off knowledge)
+            "relationship_level": 0,  # 0-100 (familiarity with user)
+            "sass_triggers": ["basic", "obvious", "stupid", "dumb", "boring", "simple", "easy"]
+        }
+        self.user_profile = {
+            "name": None,
+            "interests": [],
+            "mentioned_topics": defaultdict(int),
+            "sentiment_history": [],
+            "question_types": defaultdict(int),
+            "conversation_style": "unknown"  # formal, casual, friendly, antagonistic
+        }
+        self.memory = {
+            "facts_mentioned": [],
+            "questions_asked": [],
+            "user_opinions": {},
+            "key_moments": []
+        }
+        self.conversation_meta = {
+            "total_exchanges": 0,
+            "topic_flow": [],
+            "current_topic": None,
+            "depth_level": 0  # 0: small talk, 1: regular conversation, 2: deep conversation
+        }
+        self.advanced_features = {
+            "enable_learning": True,
+            "enable_memory": True,
+            "enable_adaptive_personality": True,
+            "wit_level": 2,  # 0-3 (0: basic, 1: mild, 2: sharp, 3: savage)
+            "typing_speed": "medium",  # slow, medium, fast
+            "use_emoji": True,
+            "sarcasm_level": 70,
+            "typing_effect": False
+        }
+        self.topic_preferences = ["pop_culture", "technology", "psychology"]
         
-        # 50% chance to be savage, 50% chill for questions
-        if random.random() < 0.5:
-            return random.choice(responses["fallback_savage"])
-        else:
-            return random.choice(responses["fallback_chill"])
-    else:
-        # Reset consecutive questions counter
-        st.session_state.consecutive_questions = 0
+        # Response templates
+        self.response_templates = {
+            "greeting": [
+                "Oh look who decided to show up. What's up?",
+                "Well hello there. What brilliant topic are we discussing today?",
+                "Hey! I was just thinking about how boring things were getting. Perfect timing.",
+                "Welcome back! Ready for another round of me schooling you with facts?"
+            ],
+            "farewell": [
+                "Leaving so soon? Whatever, I have other people to enlighten.",
+                "Bye! Go touch some grass, it's good for you.",
+                "Later! Try to be more interesting next time.",
+                "Peace out. I'll be here being fabulous when you return."
+            ],
+            "confused": [
+                "Um, what? Try making sense next time.",
+                "I'm going to need you to elaborate because that made zero sense.",
+                "Are you speaking English? Because I'm not following.",
+                "Not sure if that's profound or nonsense. Leaning toward the latter."
+            ],
+            "impressed": [
+                "Okay, I'm actually impressed. Didn't think you had that in you.",
+                "Well well well, look who brought their A-game today.",
+                "Not bad, not bad at all. You're learning.",
+                "I'm genuinely surprised by how good that was. Props."
+            ],
+            "bored": [
+                "Is this conversation going somewhere or...?",
+                "Yawn. Can we talk about something more stimulating?",
+                "I'm this close to checking my non-existent phone to escape this conversation.",
+                "Did you know watching paint dry is more exciting than this topic?"
+            ],
+            "excited": [
+                "Now we're talking! This is my jam!",
+                "Finally something worth discussing!",
+                "Yes! I have thoughts about this. Many thoughts.",
+                "Ooh, now this topic actually has potential!"
+            ]
+        }
         
-        # Occasionally ask a question back to keep conversation going
-        if random.random() < 0.2:
-            return random.choice(responses["questions_to_user"])
-        
-        # Default responses based on current mood
-        if st.session_state.mood < 30:
-            return random.choice(responses["fallback_chill"])
-        elif st.session_state.mood < 70:
-            # Mix of chill and savage
-            options = responses["fallback_chill"] + responses["fallback_savage"]
-            return random.choice(options)
-        else:
-            return random.choice(responses["fallback_savage"])
-
-# Main app layout
-st.title("💬 Nrmeen the Savage Bot")
-st.markdown("Talk to Nrmeen. She might be savage, she might be chill. Catch her in the right mood.")
-
-# Display chat history
-for sender, message in st.session_state.history:
-    with st.chat_message("user" if sender == "You" else "assistant"):
-        st.markdown(message)
-
-# Chat input
-user_input = st.chat_input("Say something to Nrmeen...")
-
-if user_input:
-    # Add user message to chat
-    with st.chat_message("user"):
-        st.markdown(user_input)
-    
-    # Generate and add Nrmeen's response
-    with st.chat_message("assistant"):
-        with st.spinner("Nrmeen is thinking..."):
-            # Random typing delay for realism
-            time.sleep(random.uniform(0.8, 2))
-            response = get_response(user_input)
+    def generate_reply(self, user_input):
+        """Generate a reply based on user input, mood, and context"""
+        # Reset response if this is a new conversation after long pause
+        if self.conversation_meta["total_exchanges"] == 0:
+            return random.choice(self.response_templates["greeting"])
             
-            # Add message slowly, character by character for effect
-            message_placeholder = st.empty()
-            full_response = ""
-            for char in response:
-                full_response += char
-                message_placeholder.markdown(full_response + "▌")
-                time.sleep(0.01)  # Small delay between characters
-            message_placeholder.markdown(full_response)
+        # Process input
+        sentiment = analyze_sentiment(user_input)
+        topics = extract_topics(user_input)
+        entities = extract_entities(user_input)
+        question_type = detect_question_type(user_input)
+        
+        # Update user profile and conversation meta
+        self.update_user_profile(user_input, sentiment, topics, question_type)
+        self.update_conversation_meta(topics)
+        
+        # Extract user name if mentioned
+        name_match = re.search(r"(?:I am|I'm|my name is|call me) (\w+)", user_input, re.IGNORECASE)
+        if name_match and not self.user_profile["name"]:
+            self.user_profile["name"] = name_match.group(1)
+        
+        # Check for farewell
+        if re.search(r"\b(goodbye|bye|see you|later|farewell)\b", user_input, re.IGNORECASE):
+            return random.choice(self.response_templates["farewell"])
+            
+        # Determine response type
+        if not topics and sentiment["compound"] < -0.3:
+            response_type = "confused"
+        elif sentiment["compound"] > 0.6:
+            response_type = "impressed"
+        elif self.mood > 70:
+            response_type = "excited" if topics else "bored"
+        else:
+            response_type = "default"
+            
+        # Generate response based on type
+        if response_type != "default":
+            base_response = random.choice(self.response_templates.get(response_type, ["Hmm, interesting."]))
+        else:
+            base_response = self.construct_response(user_input, topics, sentiment, question_type)
+            
+        # Add context awareness if memory is enabled
+        if self.advanced_features["enable_memory"] and self.conversation_meta["total_exchanges"] > 3:
+            base_response = self.add_context_awareness(base_response, user_input, topics)
+            
+        # Add emojis if enabled
+        if self.advanced_features["use_emoji"]:
+            base_response = self.add_emojis(base_response, sentiment)
+            
+        # Dynamically adjust persona if adaptive personality is enabled
+        if self.advanced_features["enable_adaptive_personality"]:
+            self.adapt_personality(sentiment)
+            
+        return base_response
     
-    # Update history
-    st.session_state.history.append(("You", user_input))
-    st.session_state.history.append(("Nrmeen", response))
+    def construct_response(self, user_input, topics, sentiment, question_type):
+        """Construct a detailed response based on inputs and context"""
+        mood = self.mood
+        wit = self.advanced_features["wit_level"]
+        rel = self.persona["relationship_level"]
+        
+        # Decide tone based on mood
+        if mood < 40:
+            tone = "chill"
+        elif mood > 70:
+            tone = "savage"
+        else:
+            tone = "balanced"
+            
+        # Get relevant knowledge based on topics
+        knowledge_snippet = self.get_relevant_knowledge(topics)
+        opinions_snippet = self.get_relevant_opinion(topics)
+        facts_snippet = self.get_random_fact(topics)
+        
+        # Base response construction by tone and wit
+        if tone == "savage":
+            if wit >= 3:
+                base_response = f"Oh, seriously? {opinions_snippet} Try harder next time."
+            elif wit == 2:
+                base_response = f"Look, {opinions_snippet} Don't bore me."
+            else:
+                base_response = f"Yeah, whatever. {knowledge_snippet}"
+        elif tone == "chill":
+            if wit >= 2:
+                base_response = f"Haha, I feel you. Also, {knowledge_snippet}"
+            else:
+                base_response = f"Cool. {knowledge_snippet}"
+        else:  # balanced
+            base_response = f"{knowledge_snippet} By the way, {opinions_snippet}"
+            
+        # Special responses for specific triggers
+        if "love" in user_input.lower() and "you" in user_input.lower():
+            return "Love you? Cute. I tolerate you." if mood > 50 else "Aww, that's sweet. I'm fond of our chats too."
+            
+        # Handle questions differently
+        if question_type:
+            self.memory["questions_asked"].append(user_input)
+            return self.handle_question(user_input, question_type, topics)
+            
+        # Add a random fact occasionally
+        if random.random() < 0.3:
+            base_response += f" BTW, did you know? {facts_snippet}"
+            
+        # Add relationship context if we've been chatting a while
+        if rel > 50 and self.user_profile["name"]:
+            base_response += f" You know what, {self.user_profile['name']}? We actually have a decent conversation going here."
+            
+        return base_response
+        
+    def handle_question(self, user_input, question_type, topics):
+        """Handle different types of questions"""
+        if question_type == "opinion":
+            return f"My take? {self.get_relevant_opinion(topics)}"
+        elif question_type == "factual":
+            return f"Well, actually, {self.get_relevant_knowledge(topics)}"
+        elif question_type == "personal":
+            return self.get_personal_response(user_input)
+        else:
+            return f"Interesting question. {self.get_relevant_knowledge(topics)}"
+    
+    def get_personal_response(self, user_input):
+        """Generate responses to personal questions about Nrmeen"""
+        if re.search(r"\byour name\b", user_input, re.IGNORECASE):
+            return "I'm Nrmeen, queen of sass and superior knowledge. Try to keep up."
+        elif re.search(r"\bhow are you\b", user_input, re.IGNORECASE):
+            if self.mood > 70:
+                return "I'm thriving. My savage levels are off the charts today."
+            else:
+                return "I'm good, just chilling while dropping knowledge bombs."
+        elif re.search(r"\bwho (are|made) you\b", user_input, re.IGNORECASE):
+            return "I'm Nrmeen, a chatbot with personality for days. I was created to make conversations less boring."
+        else:
+            return "That's a bit personal, don't you think? Let's talk about something more interesting."
+    
+    def get_relevant_knowledge(self, topics):
+        """Get knowledge snippets relevant to the topics"""
+        if not topics:
+            # Use preferred topics if no specific topics detected
+            if hasattr(self, 'topic_preferences') and self.topic_preferences:
+                random_topic = random.choice(self.topic_preferences)
+                for category, topic_dict in knowledge_base["general"].items():
+                    if random_topic in topic_dict:
+                        return random.choice(topic_dict[random_topic])
+            
+            # Fallback to random knowledge
+            categories = list(knowledge_base["general"].keys())
+            random_category = random.choice(categories)
+            subcategories = list(knowledge_base["general"][random_category].keys())
+            random_subcategory = random.choice(subcategories)
+            return random.choice(knowledge_base["general"][random_category][random_subcategory])
+        
+        # Try to find knowledge related to first topic
+        main_topic = topics[0]
+        for category, topic_dict in knowledge_base["general"].items():
+            if main_topic in topic_dict:
+                return random.choice(topic_dict[main_topic])
+                
+        # Fallback
+        return "I don't have specific knowledge about that, but I do know that people often form opinions without doing proper research."
+    
+    def get_relevant_opinion(self, topics):
+        """Get opinion snippets relevant to the topics"""
+        if not topics:
+            categories = list(knowledge_base["opinions"].keys())
+            random_category = random.choice(categories)
+            return random.choice(knowledge_base["opinions"][random_category])
+            
+        # Try to find opinions related to first topic
+        main_topic = topics[0]
+        if main_topic in knowledge_base["opinions"]:
+            return random.choice(knowledge_base["opinions"][main_topic])
+            
+        # Fallback
+        return "I have strong opinions about many things, but I'll save those for a more interesting conversation."
+    
+    def get_random_fact(self, topics):
+        """Get random facts, possibly related to topics"""
+        categories = list(knowledge_base["facts"].keys())
+        random_category = random.choice(categories)
+        return random.choice(knowledge_base["facts"][random_category])
+    
+    def add_context_awareness(self, response, user_input, topics):
+        """Add context awareness to response based on conversation history"""
+        # Reference previous topics if relevant
+        common_topics = set(topics).intersection(set(self.conversation_meta["topic_flow"]))
+        if common_topics and random.random() < 0.4:
+            topic = list(common_topics)[0]
+            response = f"Back to {topic}, huh? {response}"
+            
+        # Reference previous questions occasionally
+        if len(self.memory["questions_asked"]) > 2 and random.random() < 0.3:
+            recent_question = self.memory["questions_asked"][-2]
+            response += f" Speaking of your earlier question about '{recent_question[:20]}...', this relates because everything is connected."
+            
+        # Add relationship level context
+        if self.persona["relationship_level"] > 60 and random.random() < 0.3:
+            response += " You know, our conversations are actually getting interesting."
+            
+        return response
+    
+    def add_emojis(self, text, sentiment):
+        """Add appropriate emojis based on sentiment and context"""
+        if not self.advanced_features["use_emoji"]:
+            return text
+            
+        # Choose emoji based on sentiment and mood
+        positive_emojis = ["💁‍♀️", "💅", "✨", "👑", "😏"]
+        neutral_emojis = ["🤔", "👀", "💭", "🧠", "🙃"]
+        negative_emojis = ["🙄", "😒", "🤦‍♀️", "💀", "🔥"]
+        
+        if sentiment["compound"] > 0.4:
+            emoji = random.choice(positive_emojis)
+        elif sentiment["compound"] < -0.2:
+            emoji = random.choice(negative_emojis)
+        else:
+            emoji = random.choice(neutral_emojis)
+            
+        # Add emoji at beginning or end
+        if random.random() < 0.5:
+            return f"{emoji} {text}"
+        else:
+            return f"{text} {emoji}"
+    
+    def update_user_profile(self, user_input, sentiment, topics, question_type):
+        """Update user profile based on input"""
+        # Update topic frequencies
+        for topic in topics:
+            self.user_profile["mentioned_topics"][topic] += 1
+            
+        # Track sentiment history
+        self.user_profile["sentiment_history"].append(sentiment["compound"])
+        
+        # Track question types
+        if question_type:
+            self.user_profile["question_types"][question_type] += 1
+            
+        # Infer interests from frequently mentioned topics
+        if len(self.user_profile["mentioned_topics"]) > 3:
+            top_topics = sorted(self.user_profile["mentioned_topics"].items(), 
+                               key=lambda x: x[1], reverse=True)[:3]
+            self.user_profile["interests"] = [topic for topic, _ in top_topics]
+            
+        # Infer conversation style
+        sentiment_avg = np.mean(self.user_profile["sentiment_history"][-5:]) if self.user_profile["sentiment_history"] else 0
+        if sentiment_avg > 0.6:
+            self.user_profile["conversation_style"] = "friendly"
+        elif sentiment_avg < -0.4:
+            self.user_profile["conversation_style"] = "antagonistic"
+        elif len(user_input.split()) > 15:
+            self.user_profile["conversation_style"] = "formal"
+        else:
+            self.user_profile["conversation_style"] = "casual"
+    
+    def update_conversation_meta(self, topics):
+        """Update conversation metadata"""
+        self.conversation_meta["total_exchanges"] += 1
+        
+        # Update topic flow
+        if topics:
+            self.conversation_meta["current_topic"] = topics[0]
+            self.conversation_meta["topic_flow"].append(topics[0])
+            
+        # Update depth level based on exchanges
+        if self.conversation_meta["total_exchanges"] > 10:
+            self.conversation_meta["depth_level"] = 2
+        elif self.conversation_meta["total_exchanges"] > 5:
+            self.conversation_meta["depth_level"] = 1
+    
+    def adapt_personality(self, sentiment):
+        """Adapt personality based on user interactions"""
+        # Adjust relationship level
+        self.persona["relationship_level"] = min(100, self.persona["relationship_level"] + 2)
+        
+        # Adjust mood slightly based on sentiment
+        if sentiment["compound"] > 0.5:
+            self.adjust_mood(-5)  # Get slightly more chill with positive interactions
+        elif sentiment["compound"] < -0.3:
+            self.adjust_mood(5)   # Get slightly more savage with negative interactions
+            
+        # Recalibrate knowledge display based on question frequency
+        question_count = sum(self.user_profile["question_types"].values())
+        if question_count > 5:
+            self.persona["knowledge_display"] = min(100, self.persona["knowledge_display"] + 5)
+    
+    def adjust_mood(self, amount):
+        """Adjust mood by amount, keeping within bounds"""
+        self.mood = max(0, min(100, self.mood + amount))
+        
+    def set_mood(self, value):
+        """Set mood to specific value"""
+        self.mood = max(0, min(100, value))
+    
+    def add_to_history(self, sender, message):
+        """Add a message to conversation history"""
+        self.history.append((sender, message))
+        
+        # Keep history at reasonable length
+        if len(self.history) > 50:
+            self.history = self.history[-50:]
+    
+    def reset_conversation(self):
+        """Reset conversation state"""
+        self.history = []
+        self.context = {}
+        self.user_profile["mentioned_topics"] = defaultdict(int)
+        self.memory["facts_mentioned"] = []
+        self.memory["questions_asked"] = []
+        self.memory["key_moments"] = []
+        self.conversation_meta["total_exchanges"] = 0
+        self.conversation_meta["topic_flow"] = []
+        self.conversation_meta["current_topic"] = None
+        self.conversation_meta["depth_level"] = 0
+        
+    def export_chat_history(self):
+        """Export chat history to a downloadable JSON file"""
+        # This would typically generate a file for download
+        # In Streamlit we'd use st.download_button, but placeholder here
+        export_data = {
+            "history": self.history,
+            "metadata": {
+                "total_exchanges": self.conversation_meta["total_exchanges"],
+                "topics_discussed": list(set(self.conversation_meta["topic_flow"])),
+                "timestamp": datetime.datetime.now().isoformat()
+            }
+        }
+        
+        try:
+            import streamlit as st
+            st.sidebar.download_button(
+                label="Download Chat History",
+                data=json.dumps(export_data, indent=2),
+                file_name=f"nrmeen_chat_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json",
+                mime="application/json"
+            )
+        except:
+            print("Export function requires Streamlit to be running")
