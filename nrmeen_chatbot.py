@@ -1,11 +1,7 @@
-# nrmeen_chatbot.py
-
+import streamlit as st
 import random
 
-# Memory of the chat
-chat_history = []
-
-# Pre-made insults and worship lines
+# Insults and worships
 insults = [
     "Taha, did your brain take the day off or is this the usual?",
     "You're like WiFi in the desert—useless but still trying.",
@@ -22,46 +18,46 @@ worships = [
     "If confidence had a name, it'd be… unfortunately… you. 💫"
 ]
 
-def nrmeen_response(user_input):
+fallbacks = [
+    "Okay but why should I care?",
+    "Your opinion was noted… and ignored. 😌",
+    "Try again but this time with brain cells.",
+    "Interesting… in the way a car crash is interesting.",
+    "Slay. But also, no."
+]
+
+def get_response(user_input):
     user_input = user_input.lower()
 
-    if user_input in ["bye", "goodbye", "see you", "exit"]:
+    if any(word in user_input for word in ["bye", "exit", "see you"]):
         return "Yalla bye, go bother someone else 😘"
 
     if "love you" in user_input:
         return "Aww, tragic. I’d love me too if I were you. ❤️"
 
     if "taha" in user_input:
-        # Mix of insults and worships when Taha is mentioned
-        if random.random() < 0.5:
-            return random.choice(insults)
-        else:
-            return random.choice(worships)
+        return random.choice(insults + worships)
 
-    # General fallback responses
-    replies = [
-        "Okay but why should I care?",
-        "Your opinion was noted… and ignored. 😌",
-        "Try again but this time with brain cells.",
-        "Interesting… in the way a car crash is interesting.",
-        "Slay. But also, no."
-    ]
+    return random.choice(fallbacks)
 
-    return random.choice(replies)
 
-def chat():
-    print("Nrmeen is here. Make it quick, I have better things to do.\n")
-    while True:
-        user_input = input("You: ")
-        chat_history.append(f"You: {user_input}")
+# Streamlit App
+st.set_page_config(page_title="Nrmeen Chatbot", page_icon="🧠")
+st.title("💅 Nrmeen the Savage Bot")
+st.markdown("Talk to Nrmeen. She has time… barely.")
 
-        response = nrmeen_response(user_input)
-        chat_history.append(f"Nrmeen: {response}")
+# Chat history in session state
+if "history" not in st.session_state:
+    st.session_state.history = []
 
-        print("Nrmeen:", response)
+user_input = st.text_input("You:", key="input")
 
-        if "bye" in user_input.lower():
-            break
+if user_input:
+    response = get_response(user_input)
+    st.session_state.history.append(("You", user_input))
+    st.session_state.history.append(("Nrmeen", response))
 
-if __name__ == "__main__":
-    chat()
+# Display chat history
+for sender, message in st.session_state.history:
+    with st.chat_message("user" if sender == "You" else "assistant"):
+        st.markdown(message)
