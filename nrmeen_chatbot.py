@@ -2,7 +2,7 @@ import streamlit as st
 import random
 from collections import deque
 
-# Personality Core – Phrase Bank
+# Personality Core – Phrase Bank (same as before)
 greetings = ["yo yo wassup", "heyy bby gurl", "good morning bbg", "bbg wait"]
 savage_comebacks = [
     "stfu", "kill urself ya charmoota", "nigga plz", "ya qahba", "bitch.",
@@ -32,9 +32,10 @@ negative_keywords = ["stfu", "kill", "hate", "sad", "cry", "miss", "bad", "angry
 # Memory for conversation context
 context = deque(maxlen=6)
 
-# Mood detection based on user input (simplified sentiment)
-def detect_mood(user_input):
+# Mood detection that considers previous mood and user input
+def detect_mood(user_input, previous_mood=None):
     lowered = user_input.lower()
+
     if "taha" in lowered:
         return "taha_worship"
     elif any(word in lowered for word in positive_keywords):
@@ -45,9 +46,17 @@ def detect_mood(user_input):
         return "emotional"
     elif any(word in lowered for word in ["hi", "hello", "wassup"]):
         return "greeting"
+    elif previous_mood:
+        # Probability of staying in the same mood or shifting slightly
+        if random.random() < 0.7:  # 70% chance of staying somewhat consistent
+            return previous_mood
+        else:
+            moods = ["savage", "soft", "emotional", "romantic", "wisdom", "taha_worship"]
+            if previous_mood in moods:
+                moods.remove(previous_mood)  # Avoid immediately repeating the same mood
+            return random.choice(moods)
     else:
-        # Default to a random mood if no strong indicators
-        moods = ["savage", "soft", "emotional", "romantic", "wisdom"]
+        moods = ["savage", "soft", "emotional", "romantic", "wisdom", "taha_worship"]
         return random.choice(moods)
 
 def generate_response(user_input, current_mood):
@@ -104,14 +113,18 @@ st.write("_Made with chaos, heartbreak, and Taha worship_")
 
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
+if "current_mood" not in st.session_state:
+    st.session_state.current_mood = None
 
 user_input = st.text_input("Talk to Nrmeen:", key="input")
 
 if user_input:
-    current_mood = detect_mood(user_input)
+    current_mood = detect_mood(user_input, st.session_state.current_mood)
     reply = generate_response(user_input, current_mood)
     st.session_state.chat_history.append(("You", user_input))
     st.session_state.chat_history.append(("Nrmeen", reply))
+    st.session_state.current_mood = current_mood
+    st.session_state["input"] = "" # Clear the input text after sending
 
 st.markdown("### 💬 Chat History")
 for speaker, message in st.session_state.chat_history[-6:]:
