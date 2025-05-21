@@ -2,7 +2,7 @@ import streamlit as st
 import random
 from collections import deque
 
-# --- Nrmeen's Personality Core (same as before) ---
+# --- Nrmeen Chmkara's Personality Core ---
 greetings = ["yo yo wassup", "heyy bby gurl", "good morning bbg", "bbg wait"]
 savage_comebacks = [
     "stfu", "kill urself ya charmoota", "nigga plz", "ya qahba", "bitch.",
@@ -28,7 +28,7 @@ taha_worship = [
 # Memory for conversation context
 context = deque(maxlen=6)
 
-# Mood detection (same as the improved version)
+# Mood detection
 def detect_mood(user_input, previous_mood=None):
     lowered = user_input.lower()
 
@@ -54,7 +54,7 @@ def detect_mood(user_input, previous_mood=None):
         moods = ["savage", "soft", "emotional", "romantic", "wisdom", "taha_worship"]
         return random.choice(moods)
 
-# Response generation (same as the improved version)
+# Response generation
 def generate_response(user_input, current_mood):
     lowered = user_input.lower()
     context.append(f"You: {user_input}")
@@ -87,47 +87,61 @@ def generate_response(user_input, current_mood):
     if random.random() < 0.3:
         response += " " + random.choice(["wlh", "frfr", "ong", "ya charmoota", "😝"])
 
-    context.append(f"Nrmeen: {response}")
+    context.append(f"Nrmeen Chmkara: {response}")
     return response
 
 # --- Streamlit UI (ChatGPT-like Design) ---
-st.set_page_config(page_title="Nrmeen the Savage Bot", layout="wide")
+st.set_page_config(page_title="Nrmeen Chmkara", layout="wide")
 
 # Custom CSS for ChatGPT-like appearance
 st.markdown(
     """
     <style>
+    body {
+        background-color: #343541;
+        color: #d1d5db;
+        font-family: sans-serif;
+    }
+    .stApp {
+        max-width: 960px;
+        margin: 0 auto;
+        padding-top: 20px;
+    }
     .chat-container {
-        background-color: #f0f0f0;
-        padding: 15px;
-        border-radius: 5px;
-        margin-bottom: 10px;
+        margin-bottom: 15px;
+        padding: 10px;
+        border-radius: 8px;
+        overflow-wrap: break-word;
     }
     .user-message {
-        background-color: #dcf8c6;
-        padding: 10px;
-        border-radius: 5px;
-        margin-bottom: 5px;
+        background-color: #444654;
         text-align: right;
     }
     .assistant-message {
-        background-color: #e6e6e6;
-        padding: 10px;
-        border-radius: 5px;
-        margin-bottom: 5px;
+        background-color: #434a54;
         text-align: left;
     }
     .stTextInput > div > div > input {
-        border: 1px solid #ccc;
-        border-radius: 5px;
-        padding: 10px;
+        background-color: #40414f !important;
+        color: #d1d5db !important;
+        border: none !important;
+        border-radius: 8px !important;
+        padding: 12px !important;
+        margin-top: 20px !important;
+        margin-bottom: 30px !important;
+    }
+    .stTextInput > div > div > input::placeholder {
+        color: #8e8ea0 !important;
+    }
+    .stButton {
+        display: none !important; /* Hide the default button */
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-st.title("Nrmeen the Savage Bot")
+st.title("Nrmeen Chmkara")
 st.caption("Powered by chaotic code and Taha's influence")
 
 if "chat_history" not in st.session_state:
@@ -143,12 +157,12 @@ for speaker, message in st.session_state.chat_history:
         st.markdown(f'<div class="chat-container assistant-message">{message}</div>', unsafe_allow_html=True)
 
 # Input field at the bottom
-prompt = st.text_input("Send a message:", key="prompt")
+prompt = st.text_input("Send a message:", key="prompt", placeholder="Send a message")
 
 if prompt:
     current_mood = detect_mood(prompt, st.session_state.current_mood)
     reply = generate_response(prompt, current_mood)
     st.session_state.chat_history.append(("You", prompt))
-    st.session_state.chat_history.append(("Nrmeen", reply))
+    st.session_state.chat_history.append(("Nrmeen Chmkara", reply))
     st.session_state.current_mood = current_mood
     st.session_state["prompt"] = "" # Clear the input
