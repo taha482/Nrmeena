@@ -1,137 +1,129 @@
 import streamlit as st
+import openai
 import random
 from collections import deque
 
-# Personality Core – Phrase Bank (same as before)
-greetings = ["yo yo wassup", "heyy bby gurl", "good morning bbg", "bbg wait"]
-savage_comebacks = [
+# --- Nrmeen's Personality Core ---
+nrmeen_greetings = ["yo yo wassup", "heyy bby gurl", "good morning bbg", "bbg wait"]
+nrmeen_savage_comebacks = [
     "stfu", "kill urself ya charmoota", "nigga plz", "ya qahba", "bitch.",
-    "kys taha", "he hates you", "i told u ur not even cute"
+    "kys", "he hates you", "i told u ur not even cute"
 ]
-emotional_outbursts = [
+nrmeen_emotional_outbursts = [
     "OMFGGGG", "😭😭😭😭😭", "LMAOOOOOOO", "i miss my ex", "i hate life fr",
-    "he can fix me", "taha ily ❤️", "life is hard but ure harder"
+    "he can fix me", "ily ❤️", "life is hard but ure harder"
 ]
-romantic_mood = [
+nrmeen_romantic_mood = [
     "he’s so sweet ong", "i like him more than my ex ngl", "he's the one frfr",
     "on god he’s my baby", "yesss papiiii 😝", "good girl 😋"
 ]
-wisdom = [
+nrmeen_wisdom = [
     "just block him", "enjoy the pain", "give up on relationships",
     "focus on ur studies and ur skincare", "u don’t need a man, just food and sleep"
 ]
-taha_worship = [
+nrmeen_taha_worship = [
     "Taha is my god fr", "i literally worship taha 🙏", "he’s smarter than any man i've met",
-    "Taha>>>>ur fav", "kosomak taha but i love u"
+    ">>>>ur fav", "kosomak but i love u"
 ]
+nrmeen_random_exclamations = ["wlh", "frfr", "ong", "ya charmoota", "😝"]
 
-# Keywords for sentiment analysis (simplified)
-positive_keywords = ["sweet", "like", "love", "good", "happy", "adore"]
-negative_keywords = ["stfu", "kill", "hate", "sad", "cry", "miss", "bad", "angry"]
+# --- OpenAI API Configuration ---
+openai.api_key = st.secrets.get("OPENAI_API_KEY") # Store your API key in Streamlit secrets for security
+if not openai.api_key:
+    st.error("Please enter your OpenAI API key in Streamlit secrets!")
+    st.stop()
 
-# Memory for conversation context
-context = deque(maxlen=6)
+# --- Conversation History ---
+if "messages" not in st.session_state:
+    st.session_state["messages"] = [{"role": "assistant", "content": "Hey, I'm here. Ask me anything!"}]
 
-# Mood detection that considers previous mood and user input
-def detect_mood(user_input, previous_mood=None):
-    lowered = user_input.lower()
+# --- Function to Get OpenAI Response ---
+def get_openai_response(prompt):
+    try:
+        completion = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",  # You can choose other models like "gpt-4" if you have access
+            messages=prompt,
+        )
+        return completion.choices[0].message["content"]
+    except openai.error.OpenAIError as e:
+        return f"An error occurred: {e}"
 
-    if "taha" in lowered:
-        return "taha_worship"
-    elif any(word in lowered for word in positive_keywords):
-        return "soft"
-    elif any(word in lowered for word in negative_keywords):
-        return "savage"
-    elif any(word in lowered for word in ["omg", "miss", "hate", "life", "ily"]):
-        return "emotional"
-    elif any(word in lowered for word in ["hi", "hello", "wassup"]):
-        return "greeting"
-    elif previous_mood:
-        # Probability of staying in the same mood or shifting slightly
-        if random.random() < 0.7:  # 70% chance of staying somewhat consistent
-            return previous_mood
-        else:
-            moods = ["savage", "soft", "emotional", "romantic", "wisdom", "taha_worship"]
-            if previous_mood in moods:
-                moods.remove(previous_mood)  # Avoid immediately repeating the same mood
-            return random.choice(moods)
+# --- Function to Inject Nrmeen's Personality ---
+def inject_nrmeen(ai_response):
+    if random.random() < 0.15:  # 15% chance of a Nrmeen-like outburst
+        nrmeen_mood = random.choice(["greeting", "savage", "emotional", "romantic", "wisdom", "taha_worship"])
+        if nrmeen_mood == "greeting":
+            return f"{ai_response} {random.choice(nrmeen_greetings)}"
+        elif nrmeen_mood == "savage":
+            return f"{ai_response} {random.choice(nrmeen_savage_comebacks)}"
+        elif nrmeen_mood == "emotional":
+            return f"{ai_response} {random.choice(nrmeen_emotional_outbursts)}"
+        elif nrmeen_mood == "romantic":
+            return f"{ai_response} {random.choice(nrmeen_romantic_mood)}"
+        elif nrmeen_mood == "wisdom":
+            return f"{ai_response} {random.choice(nrmeen_wisdom)}"
+        elif nrmeen_mood == "taha_worship":
+            return f"{ai_response} {random.choice(nrmeen_taha_worship)}"
+    elif random.random() < 0.3: # Another chance for a random exclamation
+        return f"{ai_response} {random.choice(nrmeen_random_exclamations)}"
+    return ai_response
+
+# --- Streamlit UI ---
+st.set_page_config(page_title="Smarter Nrmeen", layout="wide")
+
+# Custom CSS for ChatGPT-like appearance
+st.markdown(
+    """
+    <style>
+    .chat-container {
+        background-color: #f0f0f0;
+        padding: 15px;
+        border-radius: 5px;
+        margin-bottom: 10px;
+    }
+    .user-message {
+        background-color: #dcf8c6;
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 5px;
+        text-align: right;
+    }
+    .assistant-message {
+        background-color: #e6e6e6;
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 5px;
+        text-align: left;
+    }
+    .stTextInput > div > div > input {
+        border: 1px solid #ccc;
+        border-radius: 5px;
+        padding: 10px;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.title("Smarter Nrmeen")
+st.caption("Powered by AI with a touch of chaotic personality")
+
+# Display chat history
+for message in st.session_state["messages"]:
+    if message["role"] == "user":
+        st.markdown(f'<div class="chat-container user-message">{message["content"]}</div>', unsafe_allow_html=True)
     else:
-        moods = ["savage", "soft", "emotional", "romantic", "wisdom", "taha_worship"]
-        return random.choice(moods)
+        st.markdown(f'<div class="chat-container assistant-message">{message["content"]}</div>', unsafe_allow_html=True)
 
-def generate_response(user_input, current_mood):
-    lowered = user_input.lower()
-    context.append(f"You: {user_input}")
-    response = ""
+# Input field
+if prompt := st.text_input("Send a message:", key="prompt"):
+    st.session_state["messages"].append({"role": "user", "content": prompt})
+    st.markdown(f'<div class="chat-container user-message">{prompt}</div>', unsafe_allow_html=True)
 
-    if current_mood == "savage":
-        response = random.choice(savage_comebacks)
-    elif current_mood == "soft":
-        response = random.choice(romantic_mood + greetings)
-    elif current_mood == "emotional":
-        response = random.choice(emotional_outbursts + wisdom)
-    elif current_mood == "romantic":
-        response = random.choice(romantic_mood + taha_worship)
-    elif current_mood == "wisdom":
-        response = random.choice(wisdom)
-    elif current_mood == "taha_worship":
-        response = random.choice(taha_worship)
-    elif current_mood == "greeting":
-        response = random.choice(greetings)
-    else:
-        response = random.choice(greetings + savage_comebacks + emotional_outbursts + romantic_mood + wisdom + taha_worship)
+    with st.spinner("Thinking..."):
+        ai_response = get_openai_response(st.session_state["messages"])
+        final_response = inject_nrmeen(ai_response)
+        st.session_state["messages"].append({"role": "assistant", "content": final_response})
+        st.markdown(f'<div class="chat-container assistant-message">{final_response}</div>', unsafe_allow_html=True)
 
-    # Contextual cue boosts (can be made more sophisticated)
-    if "taha" in lowered and current_mood != "taha_worship":
-        response = random.choice(taha_worship)
-    elif any(w in lowered for w in ["sad", "cry", "miss"]) and current_mood != "emotional":
-        response += " 😭"
-    elif any(w in lowered for w in ["hi", "hello", "wassup"]) and current_mood != "greeting":
-        response = random.choice(greetings)
-
-    # Add randomness
-    if random.random() < 0.3:
-        response += " " + random.choice(["wlh", "frfr", "ong", "ya charmoota", "😝"])
-
-    context.append(f"Nrmeen: {response}")
-    return response
-
-# Streamlit UI
-st.set_page_config(page_title="Nrmeen the Savage Bot", layout="centered")
-theme = st.selectbox("Choose your vibe:", ["light", "dark"])
-
-if theme == "dark":
-    st.markdown("""
-        <style>
-            body { background-color: #1e1e1e; color: #fff; }
-            .stTextInput > div > div > input { color: #000; }
-        </style>
-    """, unsafe_allow_html=True)
-
-st.title(":sparkles: Nrmeen the Savage Bot")
-st.write("_Made with chaos, heartbreak, and Taha worship_")
-
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
-if "current_mood" not in st.session_state:
-    st.session_state.current_mood = None
-
-user_input = st.text_input("Talk to Nrmeen:", key="input")
-
-if user_input:
-    current_mood = detect_mood(user_input, st.session_state.current_mood)
-    reply = generate_response(user_input, current_mood)
-    st.session_state.chat_history.append(("You", user_input))
-    st.session_state.chat_history.append(("Nrmeen", reply))
-    st.session_state.current_mood = current_mood
-    st.session_state["input"] = "" # Clear the input text after sending
-
-st.markdown("### 💬 Chat History")
-for speaker, message in st.session_state.chat_history[-6:]:
-    if speaker == "You":
-        st.markdown(f"**You:** {message}")
-    else:
-        st.markdown(f"**Nrmeen:** {message}")
-
-st.markdown("---")
-st.caption("This bot is powered by pure chaos, coded tantrums, and Taha's ego.")
+    st.session_state["prompt"] = "" # Clear the input field
